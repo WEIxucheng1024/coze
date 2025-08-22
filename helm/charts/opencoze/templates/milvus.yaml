@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-milvus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-milvus
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-milvus
+    spec:
+      containers:
+        - name: milvus
+          image: {{ .Values.images.milvus }}
+          ports:
+            - containerPort: 19530
+            - containerPort: 9091
+          env:
+            - name: ETCD_ENDPOINTS
+              value: {{ .Release.Name }}-etcd:2379
+            - name: MINIO_ADDRESS
+              value: {{ .Release.Name }}-minio:9000
+            - name: MINIO_BUCKET_NAME
+              value: {{ .Values.env.MINIO_DEFAULT_BUCKETS }}
+            - name: MINIO_ACCESS_KEY_ID
+              value: {{ .Values.env.MINIO_ROOT_USER }}
+            - name: MINIO_SECRET_ACCESS_KEY
+              value: {{ .Values.env.MINIO_ROOT_PASSWORD }}
+            - name: MINIO_USE_SSL
+              value: "false"
+            - name: LOG_LEVEL
+              value: {{ .Values.env.LOG_LEVEL }}
+          resources:
+            requests:
+              cpu: {{ .Values.resources.milvus.requests.cpu }}
+              memory: {{ .Values.resources.milvus.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.milvus.limits.cpu }}
+              memory: {{ .Values.resources.milvus.limits.memory }}
+          volumeMounts:
+            - name: milvus-data
+              mountPath: /var/lib/milvus
+          command:
+            - bash
+            - -c
+            - |
+              chown -R root:root /var/lib/milvus
+              chmod g+s /var/lib/milvus
+              exec milvus run standalone
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9091
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 10
+            retries: 10
+          securityContext:
+            seccompProfile:
+              type: Unconfined
+      volumes:
+        - name: milvus-data
+          emptyDir: {}
+      initContainers:
+        - name: wait-for-etcd
+          image: busybox:1.35
+          command: ['sh', '-c', 'until nc -z {{ .Release.Name }}-etcd 2379; do echo waiting for etcd; sleep 2; done;']
+        - name: wait-for-minio
+          image: busybox:1.35
+          command: ['sh', '-c', 'until nc -z {{ .Release.Name }}-minio 9000; do echo waiting for minio; sleep 2; done;']
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-milvus
+spec:
+  selector:
+    app: {{ .Release.Name }}-milvus
+  ports:
+    - port: 19530
+      targetPort: 19530
+    - port: 9091
+      targetPort: 9091

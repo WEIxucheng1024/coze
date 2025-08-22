@@ -1,0 +1,127 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-elasticsearch-init
+data:
+  elasticsearch.yml: |
+    {{- $.Files.Get "files/elasticsearch/elasticsearch.yml" | nindent 4 }}
+  setup_es.sh: |
+    {{- $.Files.Get "files/elasticsearch/setup_es.sh" | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-elasticsearch
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-elasticsearch
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-elasticsearch
+    spec:
+      containers:
+        - name: elasticsearch
+          image: {{ .Values.images.elasticsearch }}
+          ports:
+            - containerPort: 9200
+          env:
+            - name: TEST
+              value: "1"
+          resources:
+            requests:
+              cpu: {{ .Values.resources.elasticsearch.requests.cpu }}
+              memory: {{ .Values.resources.elasticsearch.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.elasticsearch.limits.cpu }}
+              memory: {{ .Values.resources.elasticsearch.limits.memory }}
+          volumeMounts:
+            - name: elasticsearch-data
+              mountPath: /bitnami/elasticsearch/data
+            - name: elasticsearch-config
+              mountPath: /opt/bitnami/elasticsearch/config/my_elasticsearch.yml
+              subPath: elasticsearch.yml
+            - name: elasticsearch-plugins
+              mountPath: /opt/bitnami/elasticsearch/analysis-smartcn.zip
+              subPath: analysis-smartcn.zip
+            - name: elasticsearch-init
+              mountPath: /setup_es.sh
+              subPath: setup_es.sh
+            - name: elasticsearch-index-schema
+              mountPath: /es_index_schema
+          command:
+            - bash
+            - -c
+            - |
+              /opt/bitnami/scripts/elasticsearch/setup.sh
+              chown -R elasticsearch:elasticsearch /bitnami/elasticsearch/data
+              chmod g+s /bitnami/elasticsearch/data
+              mkdir -p /bitnami/elasticsearch/plugins
+
+              echo 'Installing smartcn plugin...'
+              if [ ! -d /opt/bitnami/elasticsearch/plugins/analysis-smartcn ]; then
+                cp /opt/bitnami/elasticsearch/analysis-smartcn.zip /tmp/analysis-smartcn.zip
+                elasticsearch-plugin install file:///tmp/analysis-smartcn.zip
+                if [[ "$?" != "0" ]]; then
+                  echo 'Plugin installation failed, exiting operation';
+                  rm -rf /opt/bitnami/elasticsearch/plugins/analysis-smartcn
+                  exit 1;
+                fi;
+                rm -f /tmp/analysis-smartcn.zip;
+              fi;
+
+              touch /tmp/es_plugins_ready;
+              echo 'Plugin installation successful, marker file created';
+
+              (
+                echo 'Waiting for Elasticsearch to be ready...'
+                until curl -s -f http://localhost:9200/_cat/health >/dev/null 2>&1; do
+                  echo 'Elasticsearch not ready, waiting...'
+                  sleep 2
+                done
+                echo 'Elasticsearch is ready!'
+
+                echo 'Running Elasticsearch initialization...'
+                sed 's/\r$$//' /setup_es.sh > /setup_es_fixed.sh
+                chmod +x /setup_es_fixed.sh
+                /setup_es_fixed.sh --index-dir /es_index_schema
+                touch /tmp/es_init_complete
+                echo 'Elasticsearch initialization completed successfully!'
+              ) &
+
+              exec /opt/bitnami/scripts/elasticsearch/entrypoint.sh /opt/bitnami/scripts/elasticsearch/run.sh
+          livenessProbe:
+            exec:
+              command: ["bash", "-c", "curl -f http://localhost:9200 && [ -f /tmp/es_plugins_ready ] && [ -f /tmp/es_init_complete ]"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 10
+            retries: 10
+      volumes:
+        - name: elasticsearch-data
+          emptyDir: {}
+        - name: elasticsearch-config
+          configMap:
+            name: {{ .Release.Name }}-elasticsearch-init
+        - name: elasticsearch-plugins
+          configMap:
+            name: {{ .Release.Name }}-elasticsearch-plugins
+        - name: elasticsearch-init
+          configMap:
+            name: {{ .Release.Name }}-elasticsearch-init
+        - name: elasticsearch-index-schema
+          configMap:
+            name: {{ .Release.Name }}-elasticsearch-index
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-elasticsearch
+spec:
+  selector:
+    app: {{ .Release.Name }}-elasticsearch
+  ports:
+    - port: 9200
+      targetPort: 9200

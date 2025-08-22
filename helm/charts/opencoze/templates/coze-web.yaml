@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-nginx-config
+data:
+  nginx.conf: |
+    {{- $.Files.Get "files/nginx/nginx.conf" | nindent 4 }}
+  default.conf: |
+    {{- $.Files.Get "files/nginx/conf.d/default.conf" | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-coze-web
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-coze-web
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-coze-web
+    spec:
+      containers:
+        - name: coze-web
+          image: {{ .Values.images.cozeWeb }}
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: {{ .Values.resources.cozeWeb.requests.cpu }}
+              memory: {{ .Values.resources.cozeWeb.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.cozeWeb.limits.cpu }}
+              memory: {{ .Values.resources.cozeWeb.limits.memory }}
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+            - name: nginx-default-config
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+      initContainers:
+        - name: wait-for-coze-server
+          image: busybox:1.35
+          command: ['sh', '-c', 'until nc -z {{ .Release.Name }}-coze-server 8888; do echo waiting for coze-server; sleep 2; done;']
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: {{ .Release.Name }}-nginx-config
+        - name: nginx-default-config
+          configMap:
+            name: {{ .Release.Name }}-nginx-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-coze-web
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: 80
+      nodePort: {{ .Values.service.nodePort }}
+  selector:
+    app: {{ .Release.Name }}-coze-web
