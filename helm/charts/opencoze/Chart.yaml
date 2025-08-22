@@ -1,6 +1,0 @@
-apiVersion: v2
-name: coze-studio
-description: A Helm chart for Coze Studio
-type: application
-version: 0.1.0
-appVersion: "latest"
