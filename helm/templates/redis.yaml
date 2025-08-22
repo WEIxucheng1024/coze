@@ -1,0 +1,68 @@
+# templates/redis.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-redis
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-redis
+    spec:
+      containers:
+        - name: redis
+          image: {{ .Values.images.redis }}
+          ports:
+            - containerPort: 6379
+          env:
+            - name: REDIS_AOF_ENABLED
+              value: {{ .Values.env.REDIS_AOF_ENABLED }}
+            - name: REDIS_PORT_NUMBER
+              value: {{ .Values.env.REDIS_PORT_NUMBER }}
+            - name: REDIS_IO_THREADS
+              value: {{ .Values.env.REDIS_IO_THREADS }}
+            - name: ALLOW_EMPTY_PASSWORD
+              value: {{ .Values.env.ALLOW_EMPTY_PASSWORD }}
+          resources:
+            requests:
+              cpu: {{ .Values.resources.redis.requests.cpu }}
+              memory: {{ .Values.resources.redis.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.redis.limits.cpu }}
+              memory: {{ .Values.resources.redis.limits.memory }}
+          volumeMounts:
+            - name: redis-data
+              mountPath: /bitnami/redis/data
+          command:
+            - bash
+            - -c
+            - |
+              /opt/bitnami/scripts/redis/setup.sh
+              chown -R redis:redis /bitnami/redis/data
+              chmod g+s /bitnami/redis/data
+              exec /opt/bitnami/scripts/redis/entrypoint.sh /opt/bitnami/scripts/redis/run.sh
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 10
+            retries: 10
+      volumes:
+        - name: redis-data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "redis-service" . }}
+spec:
+  selector:
+    app: {{ .Release.Name }}-redis
+  ports:
+    - port: 6379
+      targetPort: 6379

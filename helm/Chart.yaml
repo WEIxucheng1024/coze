@@ -1,0 +1,5 @@
+apiVersion: v2
+name: coze-studio
+description: Coze Studio deployment for k3s
+version: 1.0.0
+appVersion: "latest"

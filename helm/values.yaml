@@ -1,0 +1,108 @@
+# values.yaml
+replicaCount: 1
+
+imagePullPolicy: Always
+
+images:
+  mysql: registry.yygu.cn/coze/mysql:8.4.5
+  redis: registry.yygu.cn/coze/redis:8.0
+  elasticsearch: registry.yygu.cn/coze/elasticsearch:8.18.0
+  minio: registry.yygu.cn/coze/minio:RELEASE.2025-06-13T11-33-47Z-cpuv1
+  etcd: registry.yygu.cn/coze/etcd:3.5
+  milvus: registry.yygu.cn/coze/milvus:v2.5.10
+  nsq: registry.yygu.cn/coze/nsq:v1.2.1
+  cozeServer: registry.yygu.cn/coze/opencoze:latest
+  cozeWeb: registry.yygu.cn/coze/web:latest
+  busybox: registry.yygu.cn/coze/busybox:1.35
+
+service:
+  type: NodePort
+  port: 80
+  nodePort: 58888
+
+resources:
+  mysql:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  redis:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  elasticsearch:
+    requests:
+      cpu: 1000m
+      memory: 4Gi
+    limits:
+      cpu: 2000m
+      memory: 8Gi
+  minio:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  etcd:
+    requests:
+      cpu: 300m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  milvus:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+  nsq:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  cozeServer:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  cozeWeb:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+env:
+  MYSQL_ROOT_PASSWORD: root
+  MYSQL_DATABASE: opencoze
+  MYSQL_USER: coze
+  MYSQL_PASSWORD: coze123
+  REDIS_AOF_ENABLED: "no"
+  REDIS_PORT_NUMBER: "6379"
+  REDIS_IO_THREADS: "4"
+  ALLOW_EMPTY_PASSWORD: "yes"
+  MINIO_ROOT_USER: minioadmin
+  MINIO_ROOT_PASSWORD: minioadmin123
+  MINIO_BUCKET: opencoze
+  MINIO_DEFAULT_BUCKETS: milvus
+  ETCD_AUTO_COMPACTION_MODE: revision
+  ETCD_AUTO_COMPACTION_RETENTION: "1000"
+  ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+  ALLOW_NONE_AUTHENTICATION: "yes"
+  LOG_LEVEL: debug
+  WEB_LISTEN_ADDR: "80"
+  STORAGE_BUCKET: opencoze
+  TEST: "1"

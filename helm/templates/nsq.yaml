@@ -1,0 +1,145 @@
+# templates/nsq.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-nsqlookupd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-nsqlookupd
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-nsqlookupd
+    spec:
+      containers:
+        - name: nsqlookupd
+          image: {{ .Values.images.nsq }}
+          ports:
+            - containerPort: 4160
+            - containerPort: 4161
+          command: ["/nsqlookupd"]
+          resources:
+            requests:
+              cpu: {{ .Values.resources.nsq.requests.cpu }}
+              memory: {{ .Values.resources.nsq.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.nsq.limits.cpu }}
+              memory: {{ .Values.resources.nsq.limits.memory }}
+          livenessProbe:
+            exec:
+              command: ["nsqlookupd", "--version"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 10
+            retries: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "nsqlookupd-service" . }}
+spec:
+  selector:
+    app: {{ .Release.Name }}-nsqlookupd
+  ports:
+    - port: 4160
+      targetPort: 4160
+    - port: 4161
+      targetPort: 4161
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-nsqd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-nsqd
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-nsqd
+    spec:
+      containers:
+        - name: nsqd
+          image: {{ .Values.images.nsq }}
+          ports:
+            - containerPort: 4150
+            - containerPort: 4151
+          command: ["/nsqd", "--lookupd-tcp-address={{ template "nsqlookupd-service" . }}:4160", "--broadcast-address={{ template "nsqd-service" . }}"]
+          resources:
+            requests:
+              cpu: {{ .Values.resources.nsq.requests.cpu }}
+              memory: {{ .Values.resources.nsq.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.nsq.limits.cpu }}
+              memory: {{ .Values.resources.nsq.limits.memory }}
+          livenessProbe:
+            exec:
+              command: ["/nsqd", "--version"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 10
+            retries: 10
+      initContainers:
+        - name: wait-for-nsqlookupd
+          image: {{ .Values.images.busybox }}
+          command: ['sh', '-c', 'until nc -z {{ template "nsqlookupd-service" . }} 4160; do echo waiting for nsqlookupd; sleep 2; done;']
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "nsqd-service" . }}
+spec:
+  selector:
+    app: {{ .Release.Name }}-nsqd
+  ports:
+    - port: 4150
+      targetPort: 4150
+    - port: 4151
+      targetPort: 4151
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-nsqadmin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-nsqadmin
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-nsqadmin
+    spec:
+      containers:
+        - name: nsqadmin
+          image: {{ .Values.images.nsq }}
+          ports:
+            - containerPort: 4171
+          command: ["/nsqadmin", "--lookupd-http-address={{ template "nsqlookupd-service" . }}:4161"]
+          resources:
+            requests:
+              cpu: {{ .Values.resources.nsq.requests.cpu }}
+              memory: {{ .Values.resources.nsq.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.nsq.limits.cpu }}
+              memory: {{ .Values.resources.nsq.limits.memory }}
+      initContainers:
+        - name: wait-for-nsqlookupd
+          image: {{ .Values.images.busybox }}
+          command: ['sh', '-c', 'until nc -z {{ template "nsqlookupd-service" . }} 4161; do echo waiting for nsqlookupd; sleep 2; done;']
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-nsqadmin
+spec:
+  selector:
+    app: {{ .Release.Name }}-nsqadmin
+  ports:
+    - port: 4171
+      targetPort: 4171

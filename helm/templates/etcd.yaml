@@ -1,0 +1,84 @@
+# templates/etcd.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-etcd-config
+data:
+  etcd.conf.yml: {{ $.Files.Get "files/etcd/etcd.conf.yml" | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-etcd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-etcd
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-etcd
+    spec:
+      containers:
+        - name: etcd
+          image: {{ .Values.images.etcd }}
+          ports:
+            - containerPort: 2379
+            - containerPort: 2380
+          env:
+            - name: ETCD_AUTO_COMPACTION_MODE
+              value: {{ .Values.env.ETCD_AUTO_COMPACTION_MODE }}
+            - name: ETCD_AUTO_COMPACTION_RETENTION
+              value: {{ .Values.env.ETCD_AUTO_COMPACTION_RETENTION }}
+            - name: ETCD_QUOTA_BACKEND_BYTES
+              value: {{ .Values.env.ETCD_QUOTA_BACKEND_BYTES }}
+            - name: ALLOW_NONE_AUTHENTICATION
+              value: {{ .Values.env.ALLOW_NONE_AUTHENTICATION }}
+          resources:
+            requests:
+              cpu: {{ .Values.resources.etcd.requests.cpu }}
+              memory: {{ .Values.resources.etcd.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.etcd.limits.cpu }}
+              memory: {{ .Values.resources.etcd.limits.memory }}
+          volumeMounts:
+            - name: etcd-data
+              mountPath: /bitnami/etcd
+            - name: etcd-config
+              mountPath: /opt/bitnami/etcd/conf/etcd.conf.yml
+              subPath: etcd.conf.yml
+          command:
+            - bash
+            - -c
+            - |
+              /opt/bitnami/scripts/etcd/setup.sh
+              chown -R etcd:etcd /bitnami/etcd
+              chmod g+s /bitnami/etcd
+              exec /opt/bitnami/scripts/etcd/entrypoint.sh /opt/bitnami/scripts/etcd/run.sh
+          livenessProbe:
+            exec:
+              command: ["etcdctl", "endpoint", "health"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 10
+            retries: 10
+      volumes:
+        - name: etcd-data
+          emptyDir: {}
+        - name: etcd-config
+          configMap:
+            name: {{ .Release.Name }}-etcd-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "etcd-service" . }}
+spec:
+  selector:
+    app: {{ .Release.Name }}-etcd
+  ports:
+    - port: 2379
+      targetPort: 2379
+    - port: 2380
+      targetPort: 2380

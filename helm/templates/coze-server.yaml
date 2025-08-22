@@ -1,0 +1,112 @@
+# templates/coze-server.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-coze-server-conf
+data:
+  {{- range $key, $value := .Files.Glob "files/backend/conf/*" }}
+  {{ base $key }}: |
+    {{ $.Files.Get $value | nindent 4 }}
+  {{- end }}
+    .env: |
+    {{- $.Files.Get ".env" | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-coze-server
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-coze-server
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-coze-server
+    spec:
+      containers:
+        - name: coze-server
+          image: {{ .Values.images.cozeServer }}
+          ports:
+            - containerPort: 8888
+            - containerPort: 8889
+          env:
+            - name: MYSQL_HOST
+              value: {{ template "mysql-service" . }}
+            - name: MYSQL_PORT
+              value: "3306"
+            - name: MYSQL_USER
+              value: {{ .Values.env.MYSQL_USER }}
+            - name: MYSQL_PASSWORD
+              value: {{ .Values.env.MYSQL_PASSWORD }}
+            - name: MYSQL_DATABASE
+              value: {{ .Values.env.MYSQL_DATABASE }}
+            - name: REDIS_ADDR
+              value: {{ template "redis-service" . }}:6379
+            - name: ES_ADDR
+              value: http://{{ template "elasticsearch-service" . }}:9200
+            - name: MINIO_ENDPOINT
+              value: {{ template "minio-service" . }}:9000
+            - name: MINIO_AK
+              value: {{ .Values.env.MINIO_ROOT_USER }}
+            - name: MINIO_SK
+              value: {{ .Values.env.MINIO_ROOT_PASSWORD }}
+            - name: STORAGE_BUCKET
+              value: {{ .Values.env.MINIO_BUCKET }}
+            - name: MILVUS_ADDR
+              value: {{ template "milvus-service" . }}:19530
+            - name: ETCD_ENDPOINTS
+              value: {{ template "etcd-service" . }}:2379
+            - name: NSQLookupdHTTPAddress
+              value: {{ template "nsqlookupd-service" . }}:4161
+          resources:
+            requests:
+              cpu: {{ .Values.resources.cozeServer.requests.cpu }}
+              memory: {{ .Values.resources.cozeServer.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.cozeServer.limits.cpu }}
+              memory: {{ .Values.resources.cozeServer.limits.memory }}
+          volumeMounts:
+            - name: coze-server-conf
+              mountPath: /app/resources/conf
+            - name: coze-env
+              mountPath: /app/.env
+              subPath: .env
+          command: ["/app/opencoze"]
+      initContainers:
+        - name: wait-for-mysql
+          image: {{ .Values.images.busybox }}
+          command: ['sh', '-c', 'until nc -z {{ template "mysql-service" . }} 3306; do echo waiting for mysql; sleep 2; done;']
+        - name: wait-for-redis
+          image: {{ .Values.images.busybox }}
+          command: ['sh', '-c', 'until nc -z {{ template "redis-service" . }} 6379; do echo waiting for redis; sleep 2; done;']
+        - name: wait-for-elasticsearch
+          image: {{ .Values.images.busybox }}
+          command: ['sh', '-c', 'until nc -z {{ template "elasticsearch-service" . }} 9200; do echo waiting for elasticsearch; sleep 2; done;']
+        - name: wait-for-minio
+          image: {{ .Values.images.busybox }}
+          command: ['sh', '-c', 'until nc -z {{ template "minio-service" . }} 9000; do echo waiting for minio; sleep 2; done;']
+        - name: wait-for-milvus
+          image: {{ .Values.images.busybox }}
+          command: ['sh', '-c', 'until nc -z {{ template "milvus-service" . }} 19530; do echo waiting for milvus; sleep 2; done;']
+      volumes:
+        - name: coze-server-conf
+          configMap:
+            name: {{ .Release.Name }}-coze-server-conf
+        - name: coze-env
+          configMap:
+            name: {{ .Release.Name }}-coze-server-conf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "coze-server-service" . }}
+spec:
+  selector:
+    app: {{ .Release.Name }}-coze-server
+  ports:
+    - port: 8888
+      targetPort: 8888
+    - port: 8889
+      targetPort: 8889

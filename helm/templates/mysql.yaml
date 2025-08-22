@@ -1,0 +1,76 @@
+# templates/mysql.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-mysql-init
+data:
+  init.sql: |
+    {{- $.Files.Get "files/mysql/schema.sql" | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-mysql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-mysql
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-mysql
+    spec:
+      containers:
+        - name: mysql
+          image: {{ .Values.images.mysql }}
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              value: {{ .Values.env.MYSQL_ROOT_PASSWORD }}
+            - name: MYSQL_DATABASE
+              value: {{ .Values.env.MYSQL_DATABASE }}
+            - name: MYSQL_USER
+              value: {{ .Values.env.MYSQL_USER }}
+            - name: MYSQL_PASSWORD
+              value: {{ .Values.env.MYSQL_PASSWORD }}
+          resources:
+            requests:
+              cpu: {{ .Values.resources.mysql.requests.cpu }}
+              memory: {{ .Values.resources.mysql.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.mysql.limits.cpu }}
+              memory: {{ .Values.resources.mysql.limits.memory }}
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+            - name: mysql-init
+              mountPath: /docker-entrypoint-initdb.d
+          command:
+            - --character-set-server=utf8mb4
+            - --collation-server=utf8mb4_unicode_ci
+          livenessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "localhost", "-u{{ .Values.env.MYSQL_USER }}", "-p{{ .Values.env.MYSQL_PASSWORD }}"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            retries: 5
+      volumes:
+        - name: mysql-data
+          emptyDir: {}
+        - name: mysql-init
+          configMap:
+            name: {{ .Release.Name }}-mysql-init
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "mysql-service" . }}
+spec:
+  selector:
+    app: {{ .Release.Name }}-mysql
+  ports:
+    - port: 3306
+      targetPort: 3306
